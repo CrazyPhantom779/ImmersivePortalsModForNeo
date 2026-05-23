@@ -536,11 +536,16 @@ public class McHelper {
     }
     
     @Nullable
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public static <T extends Entity, R> R traverseEntities(
-        Class<T> entityClass, LevelEntityGetter<Entity> entityLookup,
-        int chunkXStart, int chunkXEnd,
-        int chunkYStart, int chunkYEnd,
-        int chunkZStart, int chunkZEnd,
+        Class<T> entityClass,
+        LevelEntityGetter<Entity> entityLookup,
+        int chunkXStart,
+        int chunkXEnd,
+        int chunkYStart,
+        int chunkYEnd,
+        int chunkZStart,
+        int chunkZEnd,
         Function<T, R> function
     ) {
         Validate.isTrue(chunkXEnd >= chunkXStart);
@@ -548,22 +553,55 @@ public class McHelper {
         Validate.isTrue(chunkZEnd >= chunkZStart);
         Validate.isTrue(chunkXEnd - chunkXStart < 1000, "range too big");
         Validate.isTrue(chunkZEnd - chunkZStart < 1000, "range too big");
-        
+
         EntityTypeTest<Entity, T> typeFilter = EntityTypeTest.forClass(entityClass);
-        
-        EntitySectionStorage<Entity> cache =
-            (EntitySectionStorage<Entity>) ((IELevelEntityGetterAdapter) entityLookup).getCache();
-        
-        return ((IESectionedEntityCache<Entity>) cache).ip_traverseSectionInBox(
-            chunkXStart, chunkXEnd,
-            chunkYStart, chunkYEnd,
-            chunkZStart, chunkZEnd,
-            entityTrackingSection -> {
-                return ((IEEntityTrackingSection<Entity>) entityTrackingSection).ip_traverse(
-                    typeFilter, function
-                );
-            }
+
+        // Starlight/Sable compat:
+        // Immersive Portals normally expects the vanilla LevelEntityGetterAdapter
+        // with IELevelEntityGetterAdapter mixed into it. Sable can wrap the getter
+        // with SubLevelInclusiveLevelEntityGetter, which still implements
+        // LevelEntityGetter but does not implement IP's duck interface.
+        if (entityLookup instanceof IELevelEntityGetterAdapter ipGetter) {
+            EntitySectionStorage<Entity> cache = (EntitySectionStorage<Entity>) ipGetter.getCache();
+
+            return (R) ((IESectionedEntityCache) cache).ip_traverseSectionInBox(
+                chunkXStart,
+                chunkXEnd,
+                chunkYStart,
+                chunkYEnd,
+                chunkZStart,
+                chunkZEnd,
+                entityTrackingSection -> {
+                    return ((IEEntityTrackingSection) entityTrackingSection).ip_traverse(typeFilter, function);
+                }
+            );
+        }
+
+        // Sable fallback path. This is a little less optimized because it uses the
+        // public LevelEntityGetter API, but it avoids crashing on Sable's wrapper.
+        AABB box = new AABB(
+            chunkXStart << 4,
+            chunkYStart << 4,
+            chunkZStart << 4,
+            (chunkXEnd + 1) << 4,
+            (chunkYEnd + 1) << 4,
+            (chunkZEnd + 1) << 4
         );
+
+        final Object[] result = new Object[1];
+
+        entityLookup.get(typeFilter, box, entity -> {
+            R value = function.apply(entity);
+
+            if (value != null) {
+                result[0] = value;
+                return net.minecraft.util.AbortableIterationConsumer.Continuation.ABORT;
+            }
+
+            return net.minecraft.util.AbortableIterationConsumer.Continuation.CONTINUE;
+        });
+
+        return (R) result[0];
     }
     
     public static <E extends Entity, R> R traverseEntitiesByBox(

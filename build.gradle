@@ -26,6 +26,10 @@ repositories {
             maven {
                 name = "Modrinth"
                 url = "https://api.modrinth.com/maven"
+                metadataSources {
+                    mavenPom()
+                    artifact()
+                }
             }
         }
         filter {
@@ -45,6 +49,10 @@ repositories {
     maven {
         name "tterrag maven"
         url "https://maven.tterrag.com/"
+    }
+    maven {
+        name "Fabric"
+        url "https://maven.fabricmc.net/"
     }
 
     flatDir {
@@ -154,7 +162,7 @@ dependencies {
     implementation "maven.modrinth:oritech:0.16.2"
     implementation "maven.modrinth:architectury-api:13.0.8+neoforge"
     implementation "maven.modrinth:geckolib:DTo3uxPN"
-    implementation "maven.modrinth:stitch:4.0.1"
+    implementation "net.fabricmc:stitch:0.6.2"
 
     // Create
     implementation "maven.modrinth:create:1.21.1-6.0.6"

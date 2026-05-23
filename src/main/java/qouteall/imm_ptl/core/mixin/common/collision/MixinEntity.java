@@ -80,13 +80,10 @@ public abstract class MixinEntity implements IEEntity, ImmPtlEntityExtension {
     @Unique
     private static final CountDownInt IMM_PTL_LOG_COUNTER = new CountDownInt(20);
     
-    @Redirect(
-        method = "Lnet/minecraft/world/entity/Entity;move(Lnet/minecraft/world/entity/MoverType;Lnet/minecraft/world/phys/Vec3;)V",
-        at = @At(
-            value = "INVOKE",
-            target = "Lnet/minecraft/world/entity/Entity;collide(Lnet/minecraft/world/phys/Vec3;)Lnet/minecraft/world/phys/Vec3;"
-        )
-    )
+    // Starlight/Sable compat:
+    // Do not redirect Entity.collide here. Sable also redirects the same call,
+    // and two @Redirect mixins cannot safely share one target.
+    // Keep this mixin class enabled so Entity still implements IEEntity.
     private Vec3 redirectHandleCollisions(Entity entity, Vec3 attemptedMove) {
         if (!IPGlobal.enableServerCollision) {
             if (!entity.level().isClientSide()) {

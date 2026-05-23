@@ -20,6 +20,8 @@ import qouteall.imm_ptl.core.ducks.IEEntityTrackerEntry;
 import qouteall.imm_ptl.core.ducks.IETrackedEntity;
 import qouteall.imm_ptl.core.miscellaneous.IPVanillaCopy;
 import qouteall.imm_ptl.core.network.PacketRedirection;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
 import java.util.Map;
@@ -35,20 +37,20 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
     @Shadow
     @Final
     private Entity entity;
-    
+
     @Shadow
     public abstract void broadcastRemoved();
-    
+
     @Shadow
     protected abstract int getEffectiveRange();
-    
+
     @Shadow
     @Final
     private Set<ServerPlayerConnection> seenBy;
-    
+
     @Shadow
     private SectionPos lastSectionPos;
-    
+
     @Redirect(
         method = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;broadcast(Lnet/minecraft/network/protocol/Packet;)V",
         at = @At(
@@ -66,7 +68,7 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             }
         );
     }
-    
+
     @SuppressWarnings("rawtypes")
     @Redirect(
         method = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;broadcastAndSend(Lnet/minecraft/network/protocol/Packet;)V",
@@ -83,34 +85,41 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             serverPlayNetworkHandler, packet, entity.level().dimension()
         );
     }
-    
+
     /**
-     * @author qouteall
-     * @reason managed by ImmPtl
-     * In vanilla, entity tracking updates when
-     * - {@link ChunkMap#move(ServerPlayer)}
-     *   When the player moves, the entities in curr dim except that player updates to that player,
-     *   and that player updates to all player in that dimension
+     * Immersive Portals manages entity tracking itself.
+     *
+     * Starlight/Sable compat:
+     * Do not @Overwrite this method. Sable needs to inject into the vanilla
+     * updatePlayer method, and a full overwrite prevents its mixin from applying.
+     * Cancel at HEAD instead so vanilla tracking still does not run.
      */
-    @Overwrite
-    public void updatePlayer(ServerPlayer player) {
-        // nothing
+    @Inject(
+        method = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;updatePlayer(Lnet/minecraft/server/level/ServerPlayer;)V",
+        at = @At("HEAD"),
+        cancellable = true
+    )
+    private void ip_cancelVanillaUpdatePlayer(ServerPlayer player, CallbackInfo ci) {
+        ci.cancel();
     }
-    
+
     /**
-     * @author qouteall
-     * @reason managed by ImmPtl
+     * Immersive Portals manages entity tracking itself.
      */
-    @Overwrite
-    public void updatePlayers(List<ServerPlayer> list) {
-        // nothing
+    @Inject(
+        method = "Lnet/minecraft/server/level/ChunkMap$TrackedEntity;updatePlayers(Ljava/util/List;)V",
+        at = @At("HEAD"),
+        cancellable = true
+    )
+    private void ip_cancelVanillaUpdatePlayers(List<?> list, CallbackInfo ci) {
+        ci.cancel();
     }
-    
+
     @Override
     public Entity ip_getEntity() {
         return entity;
     }
-    
+
     /**
      * {@link ChunkMap.TrackedEntity#updatePlayer(ServerPlayer)}
      * This only checks the players viewing the chunk.
@@ -124,15 +133,15 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
     public void ip_updateEntityTrackingStatus() {
         IEChunkMap chunkMap = (IEChunkMap)
             ((ServerLevel) entity.level()).getChunkSource().chunkMap;
-        
+
         var watchRecMap = ImmPtlChunkTracking.getWatchRecordForChunk(
             entity.level().dimension(),
             entity.chunkPosition().x, entity.chunkPosition().z
         );
-        
+
         // no need to clamp it with render distance, as we check chunk watch records now
         int effectiveRange = getEffectiveRange();
-        
+
         seenBy.removeIf(connection -> {
             ServerPlayer player = connection.getPlayer();
             boolean shouldRemove = !watches(entity, watchRecMap, effectiveRange, player);
@@ -146,12 +155,12 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             }
             return shouldRemove;
         });
-        
+
         if (watchRecMap != null) {
             for (var e : watchRecMap.entrySet()) {
                 ServerPlayer player = e.getKey();
                 ImmPtlChunkTracking.PlayerWatchRecord rec = e.getValue();
-                
+
                 if (recWatches(entity, effectiveRange, rec, player)) {
                     if (seenBy.add(player.connection)) {
                         PacketRedirection.withForceRedirect(
@@ -165,7 +174,7 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             }
         }
     }
-    
+
     @Unique
     private static boolean watches(
         Entity entity,
@@ -176,16 +185,16 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
         if (watchRec == null) {
             return false;
         }
-        
+
         if (entity == player) {
             return false;
         }
-        
+
         ImmPtlChunkTracking.PlayerWatchRecord rec = watchRec.get(player);
         
         return recWatches(entity, effectiveRange, rec, player);
     }
-    
+
     @Unique
     private static boolean recWatches(
         Entity entity, int effectiveRange,
@@ -194,7 +203,7 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
         if (rec == null) {
             return false;
         }
-        
+
         if (!rec.isLoadedToPlayer) {
             // when player logging in standing on cross portal collision
             // we need to send add entity packet early,
@@ -204,14 +213,14 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             // TODO find a solution to this
             return false;
         }
-        
+
         if (entity == player) {
             return false;
         }
-        
+
         return rec.distanceToSource * 16 + 8 <= effectiveRange;
     }
-    
+
     @Override
     public void ip_onDimensionRemove() {
         for (ServerPlayerConnection connection : seenBy) {
@@ -219,12 +228,12 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
         }
         seenBy.clear();
     }
-    
+
     @Override
     public void ip_resendSpawnPacketToTrackers() {
         // avoid sending wrong position delta update packet
         ((IEEntityTrackerEntry) serverEntity).ip_updateTrackedEntityPosition();
-        
+
         Packet spawnPacket = entity.getAddEntityPacket(serverEntity);
         Packet<ClientGamePacketListener> redirected = PacketRedirection.createRedirectedMessage(
             entity.getServer(),
@@ -234,22 +243,22 @@ public abstract class MixinTrackedEntity implements IETrackedEntity {
             handler.send(redirected);
         });
     }
-    
+
     @Override
     public void ip_stopTrackingToAllPlayers() {
         broadcastRemoved();
     }
-    
+
     @Override
     public void ip_sendChanges() {
         serverEntity.sendChanges();
     }
-    
+
     @Override
     public SectionPos ip_getLastSectionPos() {
         return lastSectionPos;
     }
-    
+
     @Override
     public void ip_setLastSectionPos(SectionPos arg) {
         lastSectionPos = arg;
