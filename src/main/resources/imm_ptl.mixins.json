@@ -1,4 +1,4 @@
-{
+﻿{
   "required": true,
   "package": "qouteall.imm_ptl.core.mixin",
   "compatibilityLevel": "JAVA_17",
@@ -25,7 +25,6 @@
     "common.collision.IEEntity_Collision",
     "common.collision.MixinAbstractArrow",
     "common.collision.MixinAbstractMinecartEntity",
-    "common.collision.MixinEntity",
     "common.collision.MixinPlayer_Collision",
     "common.collision.MixinProjectile",
     "common.collision.MixinThrowableProjectile",
